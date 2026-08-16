@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "paulie420.vpn",
+  "name": "VPN",
+  "version": "1.0.0",
+  "author": "paulie420",
+  "license": "MIT",
+  "description": "Multi-provider VPN status and control for the Omarchy bar. One icon and one panel for every tunnel, with per-provider state, endpoint, live traffic counters and on/off switches. Ships PIA and WireGuard providers.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "VPN",
+    "description": "Connect, disconnect and monitor multiple VPNs from one panel.",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 5,
+      "pia": {
+        "enabled": true,
+        "label": "PIA"
+      },
+      "wireguard": {
+        "enabled": true,
+        "label": "PiVPN",
+        "interface": "pivpn",
+        "connectCommand": "",
+        "disconnectCommand": "",
+        "reachabilityHost": ""
+      }
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 2,
+        "max": 120,
+        "step": 1,
+        "defaultValue": 5
+      }
+    ]
+  },
+  "homepage": "https://github.com/paulie420/omarchy-vpn"
+}
