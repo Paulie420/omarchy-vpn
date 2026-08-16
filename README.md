@@ -333,6 +333,19 @@ Address and traffic rows stay hidden while a tunnel is down. With the VPN off,
 "Public IP" is your real address, and there's no reason to paint that on your
 screen where it'll land in the first screenshot you post. Ask me how I know.
 
+Hiding it while disconnected turns out not to be enough, though. On my box
+`piactl get pubip` reports the underlying connection's address the *whole time*
+PIA is connected — I watched it sit on my real IP for well over a minute of
+solid "Connected". Anything keyed on connection state alone would have happily
+displayed it, and did: it's how my own preview screenshot ended up with my home
+IP in it. Twice.
+
+So the rule is stronger now. Any address seen while not connected is
+remembered, and will never be shown as an exit IP afterwards. If your VPN
+client is honest about the exit address you'll see it; if it's reporting the
+address the tunnel is supposed to be hiding, you get no row at all. Being
+wrong in that direction is free.
+
 The plugin makes no network calls of its own. It shells out to `systemctl`,
 `wg`, `piactl` and `ping`, and reads local files. That's the entire attack
 surface.

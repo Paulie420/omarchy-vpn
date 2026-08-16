@@ -32,8 +32,22 @@ Item {
   property string connectionState: "Unknown"
   property string region: ""
   property string protocol: ""
-  property string exitIp: ""
   property string tunnelIp: ""
+
+  // `piactl get pubip` lags the connection. For several seconds after the
+  // tunnel comes up it still reports the address you had BEFORE it did --
+  // your real one -- while `connectionstate` already says Connected. Gating
+  // the panel on `connected` alone is therefore not enough, and it is exactly
+  // how this project's own preview screenshot ended up with the author's home
+  // IP in it.
+  //
+  // So: remember any address seen while NOT connected, and refuse to ever
+  // present that same address as an exit IP. Worst case the row stays hidden
+  // for a poll or two, which is the right way to be wrong.
+  property string pubIp: ""
+  property string knownRealIp: ""
+  readonly property string exitIp:
+    (pubIp !== "" && pubIp === knownRealIp) ? "" : pubIp
   property bool busy: false
   property bool loggedOut: false          // the latch
   property real rxBytes: 0
@@ -129,8 +143,12 @@ Item {
         root.connectionState = (l[0] || "").trim() || "Unknown"
         root.region = (l[1] || "").trim()
         root.protocol = (l[2] || "").trim()
-        root.exitIp = (l[3] || "").trim()
+        root.pubIp = (l[3] || "").trim()
         root.tunnelIp = (l[4] || "").trim()
+        // Anything visible while the tunnel is down is, by definition, the
+        // address the tunnel is supposed to hide.
+        if (root.connectionState !== "Connected" && root.pubIp !== "")
+          root.knownRealIp = root.pubIp
         // A genuinely successful connection is the only thing that clears the latch.
         if (root.connectionState === "Connected") root.loggedOut = false
       }
