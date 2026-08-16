@@ -1,61 +1,70 @@
 # Omarchy VPN
 
-Multi-provider VPN status and control for the [Omarchy](https://omarchy.org/) bar.
-
-One icon, one panel, every tunnel. Each provider gets its own section showing
-connection state, region/endpoint, live traffic counters and an on/off switch.
-Ships with **PIA** (Private Internet Access) and **WireGuard** providers — and
-because Mullvad, NordVPN and Proton all run WireGuard underneath, they work
-through the WireGuard provider with **no code at all**, just configuration.
+A VPN widget for the Omarchy Quattro bar. One icon, one panel, all your tunnels.
 
 ![The VPN panel](preview.png)
 
-## Why a separate widget
+I run a homelab behind a WireGuard tunnel and PIA for everything else, and I got
+tired of squinting at two separate indicators that both lied to me. So: one icon.
+Click it, see every tunnel, flip whichever one you need.
 
-A VPN is not a network *connection* — it is a policy layered over one, so it
-does not belong inside the Wi-Fi panel. Omarchy agrees: the built-in
-`omarchy.tailscale` is a separate bar widget too.
+Ships with PIA and WireGuard providers. Mullvad, Nord and Proton all run
+WireGuard under the hood, so they work too, no code required. Jump to
+[Adding your VPN](#adding-your-vpn).
 
-## What it gets right
+## Why not just cram it into the wifi menu
 
-Two failure modes drove the design, both learned the hard way:
+Because a VPN isn't a network connection, it's a policy sitting on top of one.
+Omarchy already agrees with me here, the built-in Tailscale widget is its own
+thing too.
 
-**WireGuard liveness is judged by `rx_bytes`, never `systemctl is-active`.**
-`wg-quick` is a `Type=oneshot` unit — it reports *active* the moment the
-interface and routes exist, **without ever contacting the peer**. A tunnel whose
-server is powered off therefore reports "active" forever. This widget reads
-`/sys/class/net/<iface>/statistics/rx_bytes`: zero means no handshake has ever
-completed, and the icon goes red instead of green.
+## The thing that actually matters
 
-**An expired PIA login is latched, not sampled.** When PIA's stored token
-expires the daemon gets HTTP 401 (`ApiUnauthorizedError`), retries a few
-servers, gives up, and then sits at `Disconnected` — and stops logging new
-401s. A time-windowed check forgets the login problem after a few minutes and
-shows a bland "Disconnected", which is exactly when you go looking for why it
-will not connect. Once a rejection has been seen the panel keeps saying
-**LOGGED OUT** until a connection genuinely succeeds.
+Here's the bug that made me write this.
 
-The bar icon shows **worst-case severity** across all providers, so one broken
-tunnel is never hidden behind a healthy one.
+`wg-quick` is a `Type=oneshot` systemd unit. It flips to "active" the second the
+interface exists and the routes get added. It never talks to the peer. Not once.
 
-| Colour | Meaning |
+So if your VPN server is powered off, `systemctl is-active wg-quick@whatever`
+says **active**. Forever. Cheerfully. While absolutely nothing goes through the
+tunnel. My old status script believed it, and I burned an entire afternoon at a
+beach house debugging my laptop, my wifi, and eventually my own sanity, before
+discovering the VM running PiVPN had simply been powered off the whole time.
+
+My bar was green for all of it.
+
+This widget reads `rx_bytes` off the interface instead. Zero bytes in means no
+handshake ever happened, so the icon goes red. Bytes flowing means you're
+actually connected. Groundbreaking, I know.
+
+PIA gets the same treatment for a different reason. When your PIA token expires
+the daemon takes a 401, retries a few servers, gives up, and parks at
+"Disconnected". Then it stops logging 401s. Check five minutes later and there's
+no evidence anything is wrong, and "Disconnected" looks exactly like "you turned
+it off". This widget latches it. Once PIA rejects your login it keeps yelling
+**LOGGED OUT** until a connection actually succeeds.
+
+The icon always shows the worst state across all your tunnels, so a broken one
+can't hide behind a working one.
+
+| Colour | What it means |
 |---|---|
-| green | connected and carrying traffic |
-| yellow | answered before, now gone quiet (>240s) |
-| red | up but no handshake, or PIA logged out |
-| dim | deliberately off |
+| green | connected, bytes moving |
+| yellow | was fine, gone quiet (nothing in for 4 min) |
+| red | up but no handshake, or PIA is logged out |
+| dim | off, on purpose |
 
-## Requirements
+## What you need
 
-- Omarchy **Quattro** (4.x) with `omarchy-shell`
-- A Nerd Font for the bar glyph (Omarchy ships one)
-- **WireGuard provider:** `wireguard-tools`, and permission to start/stop the
-  unit. Either a polkit rule for `wg-quick@<iface>.service`, or point
-  `connectCommand`/`disconnectCommand` at your own wrapper scripts.
-- **PIA provider:** the official PIA client (`/opt/piavpn/bin/piactl`). The
-  provider is hidden automatically when it is not installed.
+* Omarchy Quattro (4.x) with `omarchy-shell`
+* A Nerd Font for the icon (Omarchy ships one)
+* For WireGuard: `wireguard-tools`, plus permission to start and stop the unit.
+  Either add a polkit rule for `wg-quick@<iface>.service`, or point
+  `connectCommand` / `disconnectCommand` at your own scripts.
+* For PIA: the official client (`/opt/piavpn/bin/piactl`). Not installed? The
+  PIA section just doesn't show up.
 
-No other dependencies. Nothing is installed, and no configuration is written.
+Nothing else. It doesn't install anything, and it never writes to your config.
 
 ## Install
 
@@ -64,182 +73,168 @@ omarchy plugin add https://github.com/Paulie420/omarchy-vpn.git --enable
 omarchy bar move paulie420.vpn --section right
 ```
 
-## Remove
+## Uninstall
 
 ```bash
 omarchy plugin remove paulie420.vpn
 ```
 
-That deletes the plugin folder. If you added a `paulie420.vpn` block to
-`~/.config/omarchy/shell.json`, delete that entry too — the plugin never
-edits your configuration itself.
+That deletes the folder. If you added a `paulie420.vpn` block to your
+`shell.json`, delete that too. The plugin won't touch your config, which also
+means it can't clean up after itself.
 
-## Configure
+## Config
 
-All settings live in this widget's entry in `~/.config/omarchy/shell.json`.
-Everything is optional. By default the PIA provider is on (and hides itself if
-`piactl` is absent) and the WireGuard provider watches `wg0` — set `interface`
-to whatever yours is actually called.
+Everything lives in this widget's entry in `~/.config/omarchy/shell.json`, and
+all of it is optional.
 
 ```jsonc
 {
   "id": "paulie420.vpn",
   "refreshIntervalSec": 5,
 
-  "pia": {
-    "enabled": true,
-    "label": "PIA"
-  },
+  "pia": { "enabled": true, "label": "PIA" },
 
-  // Either one object or a list of them -- see "Adding your VPN" below.
+  // one object, or a list of them
   "wireguard": [{
     "enabled": true,
     "label": "Homelab",
     "interface": "wg0",
 
-    // Optional. When set, these run instead of `systemctl start/stop
-    // wg-quick@<interface>`. Useful when connecting has to do more than raise
-    // the interface -- e.g. dropping another VPN first and restoring it after.
+    // Leave these empty and it runs systemctl start/stop wg-quick@<interface>.
+    // Set them if your VPN has its own CLI, or if connecting needs to do more
+    // than raise the interface. Mine drops PIA first and puts it back after.
     "connectCommand": "",
     "disconnectCommand": "",
 
-    // Optional. A host behind the tunnel; the panel reports whether it is
-    // reachable while connected.
+    // Optional. Something living behind the tunnel. The panel tells you whether
+    // it's reachable while you're connected. Mine points at the NAS.
     "reachabilityHost": ""
   }]
 }
 ```
 
-> **Note:** `omarchy plugin disable` followed by `enable` rewrites this entry
-> back to a bare `{"id": "paulie420.vpn"}`, discarding the settings above.
-> Re-add them afterwards.
+Heads up: `omarchy plugin disable` followed by `enable` resets this entry to a
+bare `{"id": "paulie420.vpn"}`. Not my doing, but it will eat your settings, so
+keep a copy somewhere.
 
 ## Adding your VPN
 
-### Most VPNs need no code
+### Most of them need zero code
 
-Mullvad, NordVPN and Proton all run WireGuard under the hood, so the built-in
-WireGuard provider already understands them. Point it at the right interface and
-give it the provider's CLI for connect/disconnect. `wireguard` accepts a **list**,
-so you can run several side by side:
+Mullvad, NordVPN and Proton are all WireGuard underneath. Point the WireGuard
+provider at the right interface, hand it the vendor's CLI, done. And since
+`wireguard` takes a list, stack as many as you want:
 
 ```jsonc
-{
-  "id": "paulie420.vpn",
-  "wireguard": [
-    { "label": "Homelab", "interface": "wg0",
-      "reachabilityHost": "192.168.1.10" },
+"wireguard": [
+  { "label": "Homelab", "interface": "wg0", "reachabilityHost": "192.168.1.10" },
 
-    { "label": "Mullvad", "interface": "wg0-mullvad",
-      "connectCommand": "mullvad connect",
-      "disconnectCommand": "mullvad disconnect" }
-  ]
-}
+  { "label": "Mullvad", "interface": "wg0-mullvad",
+    "connectCommand": "mullvad connect",
+    "disconnectCommand": "mullvad disconnect" }
+]
 ```
 
-Starting points for the common providers. **Verify the interface name on your own
-machine** rather than trusting this table — vendors rename things between versions:
+Starting points below, but **go check the interface name yourself**. Vendors
+love renaming these between releases.
 
-| VPN | Interface (typical) | Connect | Disconnect |
+| VPN | Interface (usually) | Connect | Disconnect |
 |---|---|---|---|
 | Mullvad | `wg0-mullvad` | `mullvad connect` | `mullvad disconnect` |
 | NordVPN (NordLynx) | `nordlynx` | `nordvpn connect` | `nordvpn disconnect` |
-| Proton (WireGuard) | `proton0` | `protonvpn-cli connect` | `protonvpn-cli disconnect` |
-| Plain `wg-quick` | `wg0` | *(default: `systemctl start wg-quick@wg0`)* | |
+| Proton | `proton0` | `protonvpn-cli connect` | `protonvpn-cli disconnect` |
+| plain `wg-quick` | `wg0` | *(leave blank, it uses systemctl)* | |
 
-**To find yours:** connect the VPN by whatever means you normally use, then run
+To find yours, connect the VPN however you normally do, then:
 
 ```bash
-ip -br link            # the new interface appears while connected
-wg show                # WireGuard-based VPNs list their interface here
+ip -br link      # your new interface shows up while connected
+wg show          # anything WireGuard-based lists itself here
 ```
 
-Whatever name shows up is your `interface`. Leave `connectCommand` and
-`disconnectCommand` empty if `systemctl start/stop wg-quick@<interface>` is the
-right way to control it; set them when the vendor has its own CLI, or when
-connecting must do more than raise the interface.
+Whatever appears is your `interface`.
 
-### When you need a provider file
+### When you actually have to write code
 
-Write one only when the VPN is **not** WireGuard-based, or when it exposes state
-the generic provider cannot see. That is why PIA has its own file: it reports an
-account region, a protocol, and — crucially — an expired-login condition that
-looks identical to "switched off" unless you read the daemon's log.
+Only if your VPN isn't WireGuard-based, or it knows things the generic provider
+can't see. That's why PIA has its own file. It reports a region, a protocol, and
+that expired-login state that otherwise looks identical to "switched off".
 
-A provider is one QML file implementing this interface:
+A provider is one QML file with this shape:
 
 ```
 Properties  enabled  label  connected  busy  rxBytes  txBytes
             severity   "ok" | "warn" | "error" | "off"
-            stateText  short status line, e.g. "Connected"
-            hintText   optional explanation shown when something is wrong
+            stateText  short line, like "Connected"
+            hintText   optional, shown when something's broken
 
 Functions   connectVpn()  disconnectVpn()  toggle()  refresh()
 ```
 
-Drop `MyVpnProvider.qml` beside the others, declare it in `BarWidget.qml`
-next to `PiaProvider`, and add it to the `providers` list.
+Drop `MyVpnProvider.qml` next to the others, declare it in `BarWidget.qml`
+beside `PiaProvider`, add it to the `providers` list. That's the whole job.
 
-### Writing one with an AI assistant
+### Or just have an AI write it
 
-This is a good task to hand to a coding assistant, because the contract is small
-and there are two working examples in the repo. Give it this prompt:
+Honestly, great job to hand off. The contract is tiny and there are two working
+examples sitting right there. Paste this at your assistant of choice:
 
 > I'm writing a provider for the Omarchy `paulie420.vpn` bar widget.
-> Read `WireGuardProvider.qml` and `PiaProvider.qml` in this repo as reference —
-> they define the interface I must implement.
+> Read `WireGuardProvider.qml` and `PiaProvider.qml` in this repo first, they
+> define the interface I need to implement.
 >
-> Write `<Name>Provider.qml` for **<your VPN>**. It controls the VPN with
-> `<connect command>` / `<disconnect command>`, and I can read its status with
-> `<status command>`, which outputs `<paste real output here>`.
+> Write `<Name>Provider.qml` for **<your VPN>**. It connects with
+> `<connect command>`, disconnects with `<disconnect command>`, and I can check
+> status using `<status command>`, which prints `<paste the real output>`.
 >
-> Requirements:
+> Rules:
 > - Root is `Item { visible: false }`, imports `QtQuick` and `Quickshell.Io`.
-> - Poll state in ONE `Process` per `refresh()` call using
+> - Get all state in ONE `Process` per `refresh()`, using
 >   `stdout: StdioCollector { waitForEnd: true; onStreamFinished: ... }`.
->   Do **not** use `FileView` on `/sys/class/net/...` — those paths disappear
->   when the tunnel drops and the watcher never re-resolves.
+> - Do NOT use `FileView` on `/sys/class/net/...`. Those paths vanish when the
+>   tunnel drops and the watcher never recovers.
 > - Expose exactly: enabled, label, connected, busy, rxBytes, txBytes,
->   severity, stateText, hintText, and connectVpn/disconnectVpn/toggle/refresh.
-> - `severity` must be "error" when the VPN claims to be up but is carrying
->   nothing — never trust a service-manager "active" as proof of a live tunnel.
+>   severity, stateText, hintText, and
+>   connectVpn/disconnectVpn/toggle/refresh.
+> - `severity` must be "error" when the VPN claims it's up but nothing is
+>   coming through. Never trust systemd's "active" as proof of a live tunnel.
 >
-> Then show me the entry to add to `~/.config/omarchy/shell.json`.
+> Then show me the `shell.json` entry to add.
 
-Validate whatever it produces before trusting it:
+That last rule is the entire reason this widget exists, so don't let it skip it.
+
+Check whatever it hands you before trusting it:
 
 ```bash
 omarchy plugin validate .
 qmllint -I "$OMARCHY_PATH/shell" <Name>Provider.qml
 omarchy-shell shell rescanPlugins
+qs log -p "$OMARCHY_PATH/shell" --tail 100   # QML only complains at load time
 ```
 
-Then watch for runtime errors, which QML only reports when the component loads:
-
-```bash
-qs log -p "$OMARCHY_PATH/shell" --tail 100
-```
-
-**Pull requests adding providers are welcome** — if you get one working for a VPN
-that isn't covered here, please send it.
-
-## Development
-
-```bash
-omarchy plugin validate .
-qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml PiaProvider.qml WireGuardProvider.qml
-omarchy-shell shell rescanPlugins
-```
+**Got one working? Send a PR.** I'd love to ship more providers, and I only own
+the two VPNs I actually pay for.
 
 ## Privacy
 
-Address and traffic rows are hidden while a provider is disconnected — with the
-tunnel down, "Public IP" is your **real** address, and showing it as though it
-were a VPN property leaks it into any screenshot of the panel.
+Address and traffic rows stay hidden while a tunnel is down. With the VPN off,
+"Public IP" is your real address, and there's no reason to paint that on your
+screen where it'll land in the first screenshot you post. Ask me how I know.
 
-The plugin makes no network requests of its own. It only runs local commands
-(`systemctl`, `wg`, `piactl`, `ping`) and reads local files.
+The plugin makes no network calls of its own. It shells out to `systemctl`,
+`wg`, `piactl` and `ping`, and reads local files. That's the entire attack
+surface.
+
+## Who made this
+
+I'm paulie420. I run a homelab, a BBS, and [techheart.life](https://techheart.life),
+and I put the builds and the debugging up on YouTube at
+**[@techheart6090](https://youtube.com/@techheart6090)**.
+
+If you want to watch the kind of afternoon that produces a widget like this,
+that's where it lives. Come hang out.
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE). Use it, change it, ship it, however you like.
+MIT, see [LICENSE](LICENSE). Take it, fork it, ship it, sell it, whatever.
