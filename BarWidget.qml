@@ -29,7 +29,7 @@ Panel {
   readonly property int refreshSec: Math.max(2, setting("refreshIntervalSec", 5))
   readonly property var piaCfg: setting("pia", ({ enabled: true, label: "PIA" }))
   readonly property var wgCfg: setting("wireguard", ({
-    enabled: true, label: "PiVPN", interface: "pivpn",
+    enabled: true, label: "WireGuard", interface: "wg0",
     connectCommand: "", disconnectCommand: "", reachabilityHost: ""
   }))
 
@@ -65,8 +65,8 @@ Panel {
   WireGuardProvider {
     id: wg
     enabled: root.cfg(root.wgCfg, "enabled", true) === true
-    label: root.cfg(root.wgCfg, "label", "PiVPN")
-    iface: root.cfg(root.wgCfg, "interface", "pivpn")
+    label: root.cfg(root.wgCfg, "label", "WireGuard")
+    iface: root.cfg(root.wgCfg, "interface", "wg0")
     connectCommand: root.cfg(root.wgCfg, "connectCommand", "")
     disconnectCommand: root.cfg(root.wgCfg, "disconnectCommand", "")
     reachabilityHost: root.cfg(root.wgCfg, "reachabilityHost", "")
@@ -296,7 +296,7 @@ Panel {
                 if (p.secondsSinceRx !== undefined && p.secondsSinceRx >= 0 && p.connected)
                   rows.push({ k: "Last inbound", v: p.secondsSinceRx + "s ago" })
                 // Only meaningful while the tunnel is up -- showing
-                // "10.0.0.118 unreachable" on a deliberately disconnected VPN
+                // "<host> unreachable" on a deliberately disconnected VPN
                 // reads as a fault when nothing is wrong.
                 if (p.reachabilityHost !== undefined && p.reachabilityHost && p.connected)
                   rows.push({ k: "NAS " + p.reachabilityHost,

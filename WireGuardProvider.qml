@@ -24,8 +24,9 @@ Item {
   property string label: "WireGuard"
   property string iface: "wg0"
   property bool enabled: true
-  // PiVPN's wrapper scripts also coordinate PIA (drop it before connecting,
-  // restore it after), so they are preferred over a bare systemctl call.
+  // Optional wrapper scripts. Useful when connecting must do more than raise
+  // the interface -- e.g. dropping another VPN first and restoring it after.
+  // When set, these run instead of `systemctl start/stop wg-quick@<iface>`.
   property string connectCommand: ""
   property string disconnectCommand: ""
   property string reachabilityHost: ""
