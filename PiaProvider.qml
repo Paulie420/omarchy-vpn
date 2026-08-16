@@ -34,16 +34,16 @@ Item {
   property string protocol: ""
   property string tunnelIp: ""
 
-  // `piactl get pubip` lags the connection. For several seconds after the
-  // tunnel comes up it still reports the address you had BEFORE it did --
-  // your real one -- while `connectionstate` already says Connected. Gating
-  // the panel on `connected` alone is therefore not enough, and it is exactly
-  // how this project's own preview screenshot ended up with the author's home
-  // IP in it.
+  // `connectionstate` saying Connected does not mean `pubip` has caught up.
+  // Depending on how the daemon is routing, it can keep reporting the address
+  // of the underlying connection -- the one the tunnel is supposed to hide --
+  // for the whole session, with no sign it will ever update. Measured here at
+  // 80+ seconds of solid "Connected" still returning the pre-tunnel address.
   //
-  // So: remember any address seen while NOT connected, and refuse to ever
-  // present that same address as an exit IP. Worst case the row stays hidden
-  // for a poll or two, which is the right way to be wrong.
+  // So connection state alone is not a safe gate for displaying an address.
+  // Remember anything seen while NOT connected, and refuse to present that
+  // same value as an exit IP afterwards. Worst case the row stays hidden,
+  // which is the cheap way to be wrong.
   property string pubIp: ""
   property string knownRealIp: ""
   readonly property string exitIp:

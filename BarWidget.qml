@@ -451,9 +451,10 @@ Panel {
                 if (p.region !== undefined && p.region) rows.push({ k: "Region", v: p.region })
                 if (p.protocol !== undefined && p.protocol) rows.push({ k: "Protocol", v: p.protocol })
                 // Address and traffic rows only mean anything while the tunnel
-                // is up. While it is down "Public IP" is the user's REAL home
-                // address -- shown as if it were a VPN property, and leaked by
-                // any screenshot of the panel -- and the rest read as zeros.
+                // is up. While it is down "Public IP" is the user's own
+                // address, presented as if it were a property of the VPN, and
+                // the rest read as zeros. Providers apply a second check of
+                // their own before offering an address at all.
                 if (p.connected) {
                   if (p.exitIp !== undefined && p.exitIp) rows.push({ k: "Public IP", v: p.exitIp })
                   if (p.tunnelIp !== undefined && p.tunnelIp && p.tunnelIp !== "Unknown")
