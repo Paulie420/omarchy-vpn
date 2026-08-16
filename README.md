@@ -49,15 +49,44 @@ no evidence anything is wrong, and "Disconnected" looks exactly like "you turned
 it off". This widget latches it. Once PIA rejects your login it keeps yelling
 **LOGGED OUT** until a connection actually succeeds.
 
-The icon always shows the worst state across all your tunnels, so a broken one
-can't hide behind a working one.
+## Which VPN am I on
+
+Every VPN gets its own colour, so the bar answers that without you clicking
+anything. One tunnel up paints the icon in that tunnel's colour. Two tunnels up
+splits the glyph down the middle, one colour each. Three splits it into thirds.
+A tunnel that's switched off takes up no space, so the everyday one-VPN case is
+just a normal, solid-coloured icon.
+
+Open the panel and each VPN has a matching dot next to its name. That's the
+legend — it's how you learn which colour is which without memorising anything.
+
+Colours are assigned automatically and you can override any of them with
+`"color"`, either a hex value or one of your theme's role names (`accent`,
+`urgent`, `foreground`, `muted`):
+
+```jsonc
+"pia": { "enabled": true, "label": "PIA", "color": "#6fcf82" },
+"wireguard": [{ "label": "Homelab", "interface": "wg0", "color": "#5fa8e8" }]
+```
+
+State still wins over identity, because knowing a tunnel is *broken* matters
+more than knowing which one it is:
 
 | Colour | What it means |
 |---|---|
-| green | connected, bytes moving |
+| the VPN's own colour | connected, bytes moving |
 | yellow | was fine, gone quiet (nothing in for 4 min) |
 | red | up but no handshake, or PIA is logged out |
-| dim | off, on purpose |
+| dim | nothing is on |
+
+So with two tunnels up and one of them dead, you get half your colour and half
+red, and you know which half to go and shout at. A broken tunnel can never hide
+behind a working one.
+
+The generated palette skips red and yellow on purpose. A VPN whose identity
+colour was red would be indistinguishable from a VPN that's failing, which is
+the exact confusion this whole plugin exists to stop. If you override `color`
+with something red, that's on you.
 
 ## What you need
 
@@ -105,6 +134,11 @@ all of it is optional.
     "enabled": true,
     "label": "Homelab",
     "interface": "wg0",
+
+    // Optional. Hex, or a theme role name (accent / urgent / foreground /
+    // muted). Leave it out and you get an automatic colour. See "Which VPN
+    // am I on".
+    "color": "",
 
     // Leave these empty and it runs systemctl start/stop wg-quick@<interface>.
     // Set them if your VPN has its own CLI, or if connecting needs to do more
@@ -240,9 +274,10 @@ A provider is one QML file with this shape:
 
 ```
 Properties  enabled  label  connected  busy  rxBytes  txBytes
-            severity   "ok" | "warn" | "error" | "off"
-            stateText  short line, like "Connected"
-            hintText   optional, shown when something's broken
+            severity       "ok" | "warn" | "error" | "off"
+            stateText      short line, like "Connected"
+            hintText       optional, shown when something's broken
+            identityColor  a `color`; BarWidget assigns it, you just declare it
 
 Functions   connectVpn()  disconnectVpn()  toggle()  refresh()
 ```
@@ -270,8 +305,9 @@ examples sitting right there. Paste this at your assistant of choice:
 > - Do NOT use `FileView` on `/sys/class/net/...`. Those paths vanish when the
 >   tunnel drops and the watcher never recovers.
 > - Expose exactly: enabled, label, connected, busy, rxBytes, txBytes,
->   severity, stateText, hintText, and
->   connectVpn/disconnectVpn/toggle/refresh.
+>   severity, stateText, hintText, identityColor, and
+>   connectVpn/disconnectVpn/toggle/refresh. `identityColor` is a plain
+>   `property color` the widget writes into; just declare it.
 > - `severity` must be "error" when the VPN claims it's up but nothing is
 >   coming through. Never trust systemd's "active" as proof of a live tunnel.
 >

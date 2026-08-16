@@ -20,6 +20,9 @@ Item {
 
   // ---- configuration -------------------------------------------------
   property string label: "PIA"
+  // Identity color for the bar icon and the panel's legend dot. Set by
+  // BarWidget from the `color` setting, or from the generated hue ring.
+  property color identityColor: "#8ab4f8"
   property bool enabled: true
   property string piactl: "/opt/piavpn/bin/piactl"
   property string daemonLog: "/opt/piavpn/var/daemon.log"

@@ -22,6 +22,9 @@ Item {
 
   // ---- configuration -------------------------------------------------
   property string label: "WireGuard"
+  // Identity color for the bar icon and the panel's legend dot. Set by
+  // BarWidget from the `color` setting, or from the generated hue ring.
+  property color identityColor: "#8ab4f8"
   property string iface: "wg0"
   property bool enabled: true
   // Optional wrapper scripts. Useful when connecting must do more than raise

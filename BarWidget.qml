@@ -60,6 +60,38 @@ Panel {
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property color hoverFill: bar ? Style.hoverFillFor(bar.foreground, Color.accent) : "transparent"
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property color warnColor: Qt.lighter(Color.urgent, 1.35)
+
+  // ---- per-VPN identity colors -----------------------------------------
+  // A theme only guarantees foreground/accent/urgent/muted, which is not
+  // enough to tell two live tunnels apart, so identity hues are generated
+  // here instead of pulled from the palette.
+  //
+  // Red is deliberately absent from the ring: it belongs to the error state.
+  // A VPN whose identity color was red would be indistinguishable from a VPN
+  // that is failing, which is exactly the confusion this widget exists to
+  // stop. The ring also skips the yellow the "gone quiet" state uses.
+  readonly property var identityHues: [205, 145, 275, 172, 320, 42]
+
+  // The bar sits on wallpaper as often as on a solid color, and `barForeground`
+  // flips when it does, so lightness is picked against the foreground rather
+  // than assuming a dark bar.
+  readonly property bool onLightBar: barForeground.hslLightness < 0.5
+
+  // `spec` is the optional per-VPN "color" setting: a hex string, or one of
+  // the theme role names. Anything else falls through to the generated hue.
+  function identityColor(spec, index) {
+    if (spec) {
+      var s = String(spec).toLowerCase()
+      if (s === "accent") return Color.accent
+      if (s === "urgent") return Color.urgent
+      if (s === "foreground") return barForeground
+      if (s === "muted") return Color.muted
+      if (s.charAt(0) === "#") return spec
+    }
+    var h = identityHues[index % identityHues.length] / 360
+    return onLightBar ? Qt.hsla(h, 0.75, 0.36, 1) : Qt.hsla(h, 0.62, 0.66, 1)
+  }
 
   // ---- providers -------------------------------------------------------
   // Each provider is a self-contained component exposing the same interface:
@@ -86,10 +118,13 @@ Panel {
     return out
   }
 
+  // Identity indices are assigned by config position, not by position in the
+  // `providers` list, so a VPN keeps its color when another one is disabled.
   PiaProvider {
     id: pia
     enabled: root.cfg(root.piaCfg, "enabled", true) === true
     label: root.cfg(root.piaCfg, "label", "PIA")
+    identityColor: root.identityColor(root.cfg(root.piaCfg, "color", ""), 0)
   }
 
   Instantiator {
@@ -100,8 +135,10 @@ Panel {
 
     delegate: WireGuardProvider {
       required property var modelData
+      required property int index
       enabled: modelData ? modelData.enabled !== false : true
       label: root.cfg(modelData, "label", "WireGuard")
+      identityColor: root.identityColor(root.cfg(modelData, "color", ""), 1 + index)
       iface: root.cfg(modelData, "interface", "wg0")
       connectCommand: root.cfg(modelData, "connectCommand", "")
       disconnectCommand: root.cfg(modelData, "disconnectCommand", "")
@@ -117,8 +154,11 @@ Panel {
 
     delegate: CommandProvider {
       required property var modelData
+      required property int index
       enabled: modelData ? modelData.enabled !== false : true
       label: root.cfg(modelData, "label", "VPN")
+      identityColor: root.identityColor(root.cfg(modelData, "color", ""),
+                                        1 + root.wgConfigs.length + index)
       statusCommand: root.cfg(modelData, "statusCommand", "")
       connectedWhen: root.cfg(modelData, "connectedWhen", "connected")
       connectCommand: root.cfg(modelData, "connectCommand", "")
@@ -149,12 +189,29 @@ Panel {
     return n
   }
 
-  readonly property color iconColor: {
-    if (worstSeverity === "error") return Color.urgent
-    if (worstSeverity === "warn") return Qt.lighter(Color.urgent, 1.35)
-    if (worstSeverity === "ok") return barForeground
-    return Qt.darker(barForeground, 1.55)
+  // A provider's color says *what* it is; severity still overrides it, because
+  // knowing a tunnel is broken matters more than knowing which one it is.
+  function providerColor(p) {
+    if (p.severity === "error") return Color.urgent
+    if (p.severity === "warn") return warnColor
+    return p.identityColor
   }
+
+  // One band per VPN that is actually doing something. One live tunnel paints
+  // the glyph a single solid color; two paint it in halves, so "which VPN am I
+  // on" is answerable without opening the panel. A tunnel that is off
+  // contributes nothing, so the common case stays a plain glyph.
+  readonly property var iconBands: {
+    var out = []
+    for (var i = 0; i < providers.length; i++) {
+      if (providers[i].severity === "off") continue
+      out.push({ c: providerColor(providers[i]) })
+    }
+    if (out.length === 0) out.push({ c: Qt.darker(barForeground, 1.55) })
+    return out
+  }
+
+  readonly property color iconColor: iconBands[0].c
 
   readonly property string summaryTooltip: {
     var parts = []
@@ -193,6 +250,41 @@ Panel {
     text: "󰖂"                 // nf-md-vpn
     foreground: root.iconColor
     useActiveColor: false
+
+    // Painting the glyph ourselves is the only way to give it more than one
+    // color. Each band clips a full-size glyph and shifts it back into place,
+    // so the bands line up into one continuous icon rather than several small
+    // ones. With a single band this renders identically to BarIconButton's own
+    // OpticalGlyph, which is what it re-uses.
+    iconComponent: Component {
+      Item {
+        id: canvas
+        readonly property var bands: root.iconBands
+
+        Repeater {
+          model: canvas.bands
+
+          Item {
+            required property var modelData
+            required property int index
+            width: canvas.width / canvas.bands.length
+            height: canvas.height
+            x: index * width
+            clip: canvas.bands.length > 1
+
+            OpticalGlyph {
+              x: -parent.x
+              width: canvas.width
+              height: canvas.height
+              text: button.text
+              fontFamily: root.fontFamily
+              fontSize: Style.bar.iconFont
+              color: parent.modelData.c
+            }
+          }
+        }
+      }
+    }
     slotSize: Style.bar.statusSlot
     fontSize: Style.bar.iconFont
     tooltipText: root.summaryTooltip
@@ -255,7 +347,7 @@ Panel {
 
               readonly property color accentFor: {
                 if (modelData.severity === "error") return Color.urgent
-                if (modelData.severity === "warn") return Qt.lighter(Color.urgent, 1.35)
+                if (modelData.severity === "warn") return root.warnColor
                 if (modelData.severity === "ok") return root.foreground
                 return root.dim
               }
@@ -263,26 +355,42 @@ Panel {
               // header: name + state + switch
               Item {
                 width: parent.width
-                height: Math.max(nameCol.implicitHeight, sw.implicitHeight)
+                height: Math.max(nameRow.implicitHeight, sw.implicitHeight)
 
-                Column {
-                  id: nameCol
+                Row {
+                  id: nameRow
                   anchors.left: parent.left
                   anchors.verticalCenter: parent.verticalCenter
-                  spacing: Style.space(1)
+                  spacing: Style.space(7)
 
-                  Text {
-                    text: section.modelData.label
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    font.bold: true
+                  // The legend for the bar icon. Always present, so the colour
+                  // to VPN mapping can be learned, but dimmed while the tunnel
+                  // is down so the live one is the one that stands out.
+                  Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Style.space(7)
+                    height: width
+                    radius: width / 2
+                    color: section.modelData.identityColor
+                    opacity: section.modelData.severity === "off" ? 0.3 : 1.0
                   }
-                  Text {
-                    text: section.modelData.stateText
-                    color: section.accentFor
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
+
+                  Column {
+                    spacing: Style.space(1)
+
+                    Text {
+                      text: section.modelData.label
+                      color: root.foreground
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                      font.bold: true
+                    }
+                    Text {
+                      text: section.modelData.stateText
+                      color: section.accentFor
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                    }
                   }
                 }
 
