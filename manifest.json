@@ -26,8 +26,8 @@
       },
       "wireguard": {
         "enabled": true,
-        "label": "PiVPN",
-        "interface": "pivpn",
+        "label": "WireGuard",
+        "interface": "wg0",
         "connectCommand": "",
         "disconnectCommand": "",
         "reachabilityHost": ""

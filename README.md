@@ -6,8 +6,6 @@ One icon, one panel, every tunnel. Each provider gets its own section showing
 connection state, region/endpoint, live traffic counters and an on/off switch.
 Ships with **PIA** (Private Internet Access) and **WireGuard** providers.
 
-![The VPN panel](preview.png)
-
 ## Why a separate widget
 
 A VPN is not a network *connection* — it is a policy layered over one, so it
@@ -75,8 +73,9 @@ edits your configuration itself.
 ## Configure
 
 All settings live in this widget's entry in `~/.config/omarchy/shell.json`.
-Everything is optional; the defaults assume a PIA install and a WireGuard
-interface named `pivpn`.
+Everything is optional. By default the PIA provider is on (and hides itself if
+`piactl` is absent) and the WireGuard provider watches `wg0` — set `interface`
+to whatever yours is actually called.
 
 ```jsonc
 {
@@ -90,8 +89,8 @@ interface named `pivpn`.
 
   "wireguard": {
     "enabled": true,
-    "label": "PiVPN",
-    "interface": "pivpn",
+    "label": "Homelab",
+    "interface": "wg0",
 
     // Optional. When set, these run instead of `systemctl start/stop
     // wg-quick@<interface>`. Useful when connecting has to do more than raise
