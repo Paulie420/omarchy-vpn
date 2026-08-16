@@ -56,7 +56,7 @@ No other dependencies. Nothing is installed, and no configuration is written.
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/paulie420/omarchy-vpn.git --enable
+omarchy plugin add https://github.com/Paulie420/omarchy-vpn.git --enable
 omarchy bar move paulie420.vpn --section right
 ```
 
