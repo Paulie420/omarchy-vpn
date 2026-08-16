@@ -2,7 +2,9 @@
 
 A VPN widget for the Omarchy Quattro bar. One icon, one panel, all your tunnels.
 
-![The VPN panel](preview.png)
+![The VPN panel with a tunnel up](preview.png)
+
+![The VPN panel with everything off](preview-idle.png)
 
 I run a homelab behind a WireGuard tunnel and PIA for everything else, and I got
 tired of squinting at two separate indicators that both lied to me. So: one icon.
@@ -329,22 +331,17 @@ the two VPNs I actually pay for.
 
 ## Privacy
 
-Address and traffic rows stay hidden while a tunnel is down. With the VPN off,
-"Public IP" is your real address, and there's no reason to paint that on your
-screen where it'll land in the first screenshot you post. Ask me how I know.
+Address and traffic rows stay hidden while a tunnel is down. There's no reason
+to paint your address on your screen, where it lands in the first screenshot
+you post.
 
-Hiding it while disconnected turns out not to be enough, though. On my box
-`piactl get pubip` reports the underlying connection's address the *whole time*
-PIA is connected — I watched it sit on my real IP for well over a minute of
-solid "Connected". Anything keyed on connection state alone would have happily
-displayed it, and did: it's how my own preview screenshot ended up with my home
-IP in it. Twice.
-
-So the rule is stronger now. Any address seen while not connected is
-remembered, and will never be shown as an exit IP afterwards. If your VPN
-client is honest about the exit address you'll see it; if it's reporting the
-address the tunnel is supposed to be hiding, you get no row at all. Being
-wrong in that direction is free.
+Connection state alone isn't a safe gate for that, though. Some clients keep
+reporting the underlying connection's address well after they say they're
+connected — `piactl get pubip` is one of them. So the rule here is stricter:
+any address seen while **not** connected is remembered, and is never shown as
+an exit IP afterwards. A client that honestly reports its exit gets a row; one
+that's still reporting the address the tunnel is meant to hide gets no row at
+all. Erring toward the blank row costs nothing.
 
 The plugin makes no network calls of its own. It shells out to `systemctl`,
 `wg`, `piactl` and `ping`, and reads local files. That's the entire attack
