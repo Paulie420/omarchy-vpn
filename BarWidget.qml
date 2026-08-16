@@ -28,10 +28,17 @@ Panel {
   // ---- config ----------------------------------------------------------
   readonly property int refreshSec: Math.max(2, setting("refreshIntervalSec", 5))
   readonly property var piaCfg: setting("pia", ({ enabled: true, label: "PIA" }))
-  readonly property var wgCfg: setting("wireguard", ({
-    enabled: true, label: "WireGuard", interface: "wg0",
-    connectCommand: "", disconnectCommand: "", reachabilityHost: ""
-  }))
+
+  // `wireguard` accepts either one object or a list of them, so several
+  // WireGuard-based VPNs (a homelab tunnel, Mullvad, NordLynx, Proton...) can
+  // sit side by side in the same panel. A single object is wrapped into a
+  // one-item list so both spellings behave identically.
+  readonly property var wgConfigs: {
+    var c = setting("wireguard", undefined)
+    if (c === undefined || c === null)
+      return [({ enabled: true, label: "WireGuard", interface: "wg0" })]
+    return (c instanceof Array) ? c : [c]
+  }
 
   function cfg(obj, key, fallback) {
     if (!obj) return fallback
@@ -49,10 +56,19 @@ Panel {
   //   enabled label connected severity stateText hintText busy
   //   rxBytes txBytes  +  connectVpn() disconnectVpn() toggle() refresh()
   // Adding another VPN means dropping in one more file and listing it here.
+  // Bumped whenever the WireGuard instantiator adds or removes an object, so
+  // `providers` re-evaluates: reading wgHost.count alone is not a binding
+  // dependency strong enough to catch model edits.
+  property int providersRevision: 0
+
   readonly property var providers: {
+    providersRevision
     var out = []
     if (pia.enabled) out.push(pia)
-    if (wg.enabled) out.push(wg)
+    for (var i = 0; i < wgHost.count; i++) {
+      var o = wgHost.objectAt(i)
+      if (o && o.enabled) out.push(o)
+    }
     return out
   }
 
@@ -62,14 +78,21 @@ Panel {
     label: root.cfg(root.piaCfg, "label", "PIA")
   }
 
-  WireGuardProvider {
-    id: wg
-    enabled: root.cfg(root.wgCfg, "enabled", true) === true
-    label: root.cfg(root.wgCfg, "label", "WireGuard")
-    iface: root.cfg(root.wgCfg, "interface", "wg0")
-    connectCommand: root.cfg(root.wgCfg, "connectCommand", "")
-    disconnectCommand: root.cfg(root.wgCfg, "disconnectCommand", "")
-    reachabilityHost: root.cfg(root.wgCfg, "reachabilityHost", "")
+  Instantiator {
+    id: wgHost
+    model: root.wgConfigs
+    onObjectAdded: root.providersRevision++
+    onObjectRemoved: root.providersRevision++
+
+    delegate: WireGuardProvider {
+      required property var modelData
+      enabled: modelData ? modelData.enabled !== false : true
+      label: root.cfg(modelData, "label", "WireGuard")
+      iface: root.cfg(modelData, "interface", "wg0")
+      connectCommand: root.cfg(modelData, "connectCommand", "")
+      disconnectCommand: root.cfg(modelData, "disconnectCommand", "")
+      reachabilityHost: root.cfg(modelData, "reachabilityHost", "")
+    }
   }
 
   // ---- aggregate state for the bar icon ---------------------------------

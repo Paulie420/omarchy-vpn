@@ -4,7 +4,11 @@ Multi-provider VPN status and control for the [Omarchy](https://omarchy.org/) ba
 
 One icon, one panel, every tunnel. Each provider gets its own section showing
 connection state, region/endpoint, live traffic counters and an on/off switch.
-Ships with **PIA** (Private Internet Access) and **WireGuard** providers.
+Ships with **PIA** (Private Internet Access) and **WireGuard** providers — and
+because Mullvad, NordVPN and Proton all run WireGuard underneath, they work
+through the WireGuard provider with **no code at all**, just configuration.
+
+![The VPN panel](preview.png)
 
 ## Why a separate widget
 
@@ -87,7 +91,8 @@ to whatever yours is actually called.
     "label": "PIA"
   },
 
-  "wireguard": {
+  // Either one object or a list of them -- see "Adding your VPN" below.
+  "wireguard": [{
     "enabled": true,
     "label": "Homelab",
     "interface": "wg0",
@@ -101,7 +106,7 @@ to whatever yours is actually called.
     // Optional. A host behind the tunnel; the panel reports whether it is
     // reachable while connected.
     "reachabilityHost": ""
-  }
+  }]
 }
 ```
 
@@ -109,25 +114,114 @@ to whatever yours is actually called.
 > back to a bare `{"id": "paulie420.vpn"}`, discarding the settings above.
 > Re-add them afterwards.
 
-## Adding another VPN
+## Adding your VPN
 
-Providers are self-contained QML components exposing one interface:
+### Most VPNs need no code
+
+Mullvad, NordVPN and Proton all run WireGuard under the hood, so the built-in
+WireGuard provider already understands them. Point it at the right interface and
+give it the provider's CLI for connect/disconnect. `wireguard` accepts a **list**,
+so you can run several side by side:
+
+```jsonc
+{
+  "id": "paulie420.vpn",
+  "wireguard": [
+    { "label": "Homelab", "interface": "wg0",
+      "reachabilityHost": "192.168.1.10" },
+
+    { "label": "Mullvad", "interface": "wg0-mullvad",
+      "connectCommand": "mullvad connect",
+      "disconnectCommand": "mullvad disconnect" }
+  ]
+}
+```
+
+Starting points for the common providers. **Verify the interface name on your own
+machine** rather than trusting this table — vendors rename things between versions:
+
+| VPN | Interface (typical) | Connect | Disconnect |
+|---|---|---|---|
+| Mullvad | `wg0-mullvad` | `mullvad connect` | `mullvad disconnect` |
+| NordVPN (NordLynx) | `nordlynx` | `nordvpn connect` | `nordvpn disconnect` |
+| Proton (WireGuard) | `proton0` | `protonvpn-cli connect` | `protonvpn-cli disconnect` |
+| Plain `wg-quick` | `wg0` | *(default: `systemctl start wg-quick@wg0`)* | |
+
+**To find yours:** connect the VPN by whatever means you normally use, then run
+
+```bash
+ip -br link            # the new interface appears while connected
+wg show                # WireGuard-based VPNs list their interface here
+```
+
+Whatever name shows up is your `interface`. Leave `connectCommand` and
+`disconnectCommand` empty if `systemctl start/stop wg-quick@<interface>` is the
+right way to control it; set them when the vendor has its own CLI, or when
+connecting must do more than raise the interface.
+
+### When you need a provider file
+
+Write one only when the VPN is **not** WireGuard-based, or when it exposes state
+the generic provider cannot see. That is why PIA has its own file: it reports an
+account region, a protocol, and — crucially — an expired-login condition that
+looks identical to "switched off" unless you read the daemon's log.
+
+A provider is one QML file implementing this interface:
 
 ```
-enabled  label  connected  severity  stateText  hintText  busy  rxBytes  txBytes
-connectVpn()  disconnectVpn()  toggle()  refresh()
+Properties  enabled  label  connected  busy  rxBytes  txBytes
+            severity   "ok" | "warn" | "error" | "off"
+            stateText  short status line, e.g. "Connected"
+            hintText   optional explanation shown when something is wrong
+
+Functions   connectVpn()  disconnectVpn()  toggle()  refresh()
 ```
 
-`severity` is one of `ok` / `warn` / `error` / `off`. To add a provider, drop a
-new `*Provider.qml` beside the others implementing that interface, then declare
-it in `BarWidget.qml` alongside `PiaProvider` and `WireGuardProvider` and add it
-to the `providers` list.
+Drop `MyVpnProvider.qml` beside the others, declare it in `BarWidget.qml`
+next to `PiaProvider`, and add it to the `providers` list.
 
-Providers poll rather than watch files. That is deliberate: an earlier version
-used `FileView` on `/sys/class/net/<iface>/statistics/*`, and those paths vanish
-when a tunnel drops, so the watcher's load failed and never re-resolved when the
-interface came back — the panel stuck on "Interface missing" after the first
-disconnect. A short poll is correct across any number of up/down cycles.
+### Writing one with an AI assistant
+
+This is a good task to hand to a coding assistant, because the contract is small
+and there are two working examples in the repo. Give it this prompt:
+
+> I'm writing a provider for the Omarchy `paulie420.vpn` bar widget.
+> Read `WireGuardProvider.qml` and `PiaProvider.qml` in this repo as reference —
+> they define the interface I must implement.
+>
+> Write `<Name>Provider.qml` for **<your VPN>**. It controls the VPN with
+> `<connect command>` / `<disconnect command>`, and I can read its status with
+> `<status command>`, which outputs `<paste real output here>`.
+>
+> Requirements:
+> - Root is `Item { visible: false }`, imports `QtQuick` and `Quickshell.Io`.
+> - Poll state in ONE `Process` per `refresh()` call using
+>   `stdout: StdioCollector { waitForEnd: true; onStreamFinished: ... }`.
+>   Do **not** use `FileView` on `/sys/class/net/...` — those paths disappear
+>   when the tunnel drops and the watcher never re-resolves.
+> - Expose exactly: enabled, label, connected, busy, rxBytes, txBytes,
+>   severity, stateText, hintText, and connectVpn/disconnectVpn/toggle/refresh.
+> - `severity` must be "error" when the VPN claims to be up but is carrying
+>   nothing — never trust a service-manager "active" as proof of a live tunnel.
+>
+> Then show me the entry to add to `~/.config/omarchy/shell.json`.
+
+Validate whatever it produces before trusting it:
+
+```bash
+omarchy plugin validate .
+qmllint -I "$OMARCHY_PATH/shell" <Name>Provider.qml
+omarchy-shell shell rescanPlugins
+```
+
+Then watch for runtime errors, which QML only reports when the component loads:
+
+```bash
+qs log -p "$OMARCHY_PATH/shell" --tail 100
+```
+
+**Pull requests adding providers are welcome** — if you get one working for a VPN
+that isn't covered here, please send it.
 
 ## Development
 
