@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "paulie420.vpn",
   "name": "VPN",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "paulie420",
   "license": "MIT",
-  "description": "Multi-provider VPN status and control for the Omarchy bar. One icon and one panel for every tunnel, with per-provider state, endpoint, live traffic counters and on/off switches. Ships PIA and WireGuard providers.",
+  "description": "Multi-provider VPN status and control for the Omarchy bar. Run several VPNs at once, each with live traffic and honest connection state. Ships PIA, WireGuard and a generic CLI provider that drives Mullvad, Proton, NordVPN, IVPN, Mozilla, Windscribe, AirVPN, FortiVPN or any NetworkManager profile from config.",
   "kinds": [
     "bar-widget"
   ],

@@ -33,6 +33,15 @@ Panel {
   // WireGuard-based VPNs (a homelab tunnel, Mullvad, NordLynx, Proton...) can
   // sit side by side in the same panel. A single object is wrapped into a
   // one-item list so both spellings behave identically.
+  // Any VPN with a CLI, configured entirely from shell.json. See the README
+  // cookbook for ready-made entries (Mullvad, Proton, IVPN, Mozilla, AirVPN,
+  // NordVPN, Windscribe, FortiVPN...).
+  readonly property var customConfigs: {
+    var c = setting("custom", undefined)
+    if (c === undefined || c === null) return []
+    return (c instanceof Array) ? c : [c]
+  }
+
   readonly property var wgConfigs: {
     var c = setting("wireguard", undefined)
     if (c === undefined || c === null)
@@ -49,6 +58,7 @@ Panel {
   // ---- theming ---------------------------------------------------------
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.55)
+  readonly property color hoverFill: bar ? Style.hoverFillFor(bar.foreground, Color.accent) : "transparent"
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   // ---- providers -------------------------------------------------------
@@ -68,6 +78,10 @@ Panel {
     for (var i = 0; i < wgHost.count; i++) {
       var o = wgHost.objectAt(i)
       if (o && o.enabled) out.push(o)
+    }
+    for (var j = 0; j < cmdHost.count; j++) {
+      var c = cmdHost.objectAt(j)
+      if (c && c.enabled) out.push(c)
     }
     return out
   }
@@ -92,6 +106,28 @@ Panel {
       connectCommand: root.cfg(modelData, "connectCommand", "")
       disconnectCommand: root.cfg(modelData, "disconnectCommand", "")
       reachabilityHost: root.cfg(modelData, "reachabilityHost", "")
+    }
+  }
+
+  Instantiator {
+    id: cmdHost
+    model: root.customConfigs
+    onObjectAdded: root.providersRevision++
+    onObjectRemoved: root.providersRevision++
+
+    delegate: CommandProvider {
+      required property var modelData
+      enabled: modelData ? modelData.enabled !== false : true
+      label: root.cfg(modelData, "label", "VPN")
+      statusCommand: root.cfg(modelData, "statusCommand", "")
+      connectedWhen: root.cfg(modelData, "connectedWhen", "connected")
+      connectCommand: root.cfg(modelData, "connectCommand", "")
+      disconnectCommand: root.cfg(modelData, "disconnectCommand", "")
+      iface: root.cfg(modelData, "interface", "")
+      reachabilityHost: root.cfg(modelData, "reachabilityHost", "")
+      regionListCommand: root.cfg(modelData, "regionListCommand", "")
+      regionSetCommand: root.cfg(modelData, "regionSetCommand", "")
+      detail: modelData ? (modelData.detail || null) : null
     }
   }
 
@@ -328,6 +364,38 @@ Panel {
                   rows.push({ k: "Traffic", v: "↑ " + root.humanBytes(p.txBytes)
                                              + "   ↓ " + root.humanBytes(p.rxBytes) })
                 return rows
+              }
+
+              // Region / server picker. Uses omarchy-menu-select so the list is
+              // Quattro's own themed picker rather than a bespoke QML list.
+              Item {
+                visible: section.modelData.canPickRegion === true
+                width: parent.width
+                height: visible ? pickLabel.implicitHeight + Style.space(6) : 0
+
+                Rectangle {
+                  anchors.fill: parent
+                  color: pickMouse.containsMouse ? root.hoverFill : "transparent"
+                  radius: Style.cornerRadius > 0 ? Style.space(4) : 0
+                }
+
+                Text {
+                  id: pickLabel
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "Change server…"
+                  color: pickMouse.containsMouse ? root.foreground : root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                MouseArea {
+                  id: pickMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: { section.modelData.pickRegion(); root.close() }
+                }
               }
 
               PanelSeparator {

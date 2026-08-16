@@ -8,9 +8,14 @@ I run a homelab behind a WireGuard tunnel and PIA for everything else, and I got
 tired of squinting at two separate indicators that both lied to me. So: one icon.
 Click it, see every tunnel, flip whichever one you need.
 
-Ships with PIA and WireGuard providers. Mullvad, Nord and Proton all run
-WireGuard under the hood, so they work too, no code required. Jump to
-[Adding your VPN](#adding-your-vpn).
+Three providers ship with it: **PIA**, **WireGuard**, and a **generic CLI**
+provider that drives anything with a command line. Mullvad, Proton, NordVPN,
+IVPN, Mozilla VPN, Windscribe, AirVPN, FortiVPN, or any NetworkManager profile,
+all from config, no code. There's a [cookbook](#cookbook) with ready-made
+entries.
+
+And you can run several at once. A homelab tunnel and a commercial VPN sit side
+by side in the same panel, each with its own state, traffic and switch.
 
 ## Why not just cram it into the wifi menu
 
@@ -122,38 +127,108 @@ keep a copy somewhere.
 
 ### Most of them need zero code
 
-Mullvad, NordVPN and Proton are all WireGuard underneath. Point the WireGuard
-provider at the right interface, hand it the vendor's CLI, done. And since
-`wireguard` takes a list, stack as many as you want:
+There are two ways in, and neither involves writing QML.
+
+**If it's WireGuard underneath** (Mullvad, NordLynx, Proton, plain `wg-quick`),
+use the `wireguard` list. Point it at the interface, hand it the vendor's CLI:
 
 ```jsonc
 "wireguard": [
   { "label": "Homelab", "interface": "wg0", "reachabilityHost": "192.168.1.10" },
-
   { "label": "Mullvad", "interface": "wg0-mullvad",
-    "connectCommand": "mullvad connect",
-    "disconnectCommand": "mullvad disconnect" }
+    "connectCommand": "mullvad connect", "disconnectCommand": "mullvad disconnect" }
 ]
 ```
 
-Starting points below, but **go check the interface name yourself**. Vendors
-love renaming these between releases.
+**If it has any CLI at all**, use the `custom` list. This drives anything:
 
-| VPN | Interface (usually) | Connect | Disconnect |
-|---|---|---|---|
-| Mullvad | `wg0-mullvad` | `mullvad connect` | `mullvad disconnect` |
-| NordVPN (NordLynx) | `nordlynx` | `nordvpn connect` | `nordvpn disconnect` |
-| Proton | `proton0` | `protonvpn-cli connect` | `protonvpn-cli disconnect` |
-| plain `wg-quick` | `wg0` | *(leave blank, it uses systemctl)* | |
-
-To find yours, connect the VPN however you normally do, then:
-
-```bash
-ip -br link      # your new interface shows up while connected
-wg show          # anything WireGuard-based lists itself here
+```jsonc
+"custom": [
+  { "label": "Proton",
+    "statusCommand": "protonvpn status",
+    "connectedWhen": "Connected",
+    "connectCommand": "protonvpn connect -f",
+    "disconnectCommand": "protonvpn disconnect",
+    "interface": "proton0" }
+]
 ```
 
-Whatever appears is your `interface`.
+`interface` is optional but set it if you can. It's what gives you live traffic
+counters, and it's what catches your VPN's CLI claiming "connected" while the
+tunnel is actually carrying nothing.
+
+### Cookbook
+
+Drop these into `custom` and adjust. **Check the commands and interface names on
+your own box first** — I've only personally run the PIA and WireGuard ones, the
+rest came from reading the source of the single-vendor plugins on the
+marketplace, and vendors rename things.
+
+```jsonc
+// Mullvad
+{ "label": "Mullvad", "statusCommand": "mullvad status",
+  "connectedWhen": "Connected",
+  "connectCommand": "mullvad connect", "disconnectCommand": "mullvad disconnect",
+  "regionListCommand": "mullvad relay list | awk '/^[a-z]{2}/ {print $1}'",
+  "regionSetCommand": "mullvad relay set location {}",
+  "interface": "wg0-mullvad" }
+
+// Proton VPN
+{ "label": "Proton", "statusCommand": "protonvpn status",
+  "connectedWhen": "Connected",
+  "connectCommand": "protonvpn connect -f", "disconnectCommand": "protonvpn disconnect",
+  "regionListCommand": "protonvpn countries list",
+  "regionSetCommand": "protonvpn connect --country {}",
+  "interface": "proton0" }
+
+// IVPN
+{ "label": "IVPN", "statusCommand": "ivpn status",
+  "connectedWhen": "Connected",
+  "connectCommand": "ivpn connect -last", "disconnectCommand": "ivpn disconnect" }
+
+// Mozilla VPN
+{ "label": "Mozilla", "statusCommand": "mozillavpn status",
+  "connectedWhen": "active",
+  "connectCommand": "mozillavpn activate", "disconnectCommand": "mozillavpn deactivate" }
+
+// NordVPN (NordLynx is WireGuard, so the interface gives you real liveness)
+{ "label": "NordVPN", "statusCommand": "nordvpn status",
+  "connectedWhen": "Connected",
+  "connectCommand": "nordvpn connect", "disconnectCommand": "nordvpn disconnect",
+  "regionListCommand": "nordvpn countries", "regionSetCommand": "nordvpn connect {}",
+  "interface": "nordlynx" }
+
+// Windscribe
+{ "label": "Windscribe", "statusCommand": "windscribe-cli status",
+  "connectedWhen": "Connected",
+  "connectCommand": "windscribe-cli connect", "disconnectCommand": "windscribe-cli disconnect" }
+
+// AirVPN (NetworkManager profile)
+{ "label": "AirVPN", "statusCommand": "nmcli -t -f NAME,DEVICE con show --active",
+  "connectedWhen": "AirVPN",
+  "connectCommand": "nmcli con up id 'AirVPN'", "disconnectCommand": "nmcli con down id 'AirVPN'" }
+
+// FortiVPN (SSL-VPN, usually needs sudo + 2FA, so run it in a terminal)
+{ "label": "FortiVPN", "statusCommand": "pgrep -a openfortivpn",
+  "connectedWhen": "openfortivpn",
+  "connectCommand": "omarchy-launch-tui sudo openfortivpn",
+  "disconnectCommand": "sudo pkill openfortivpn", "interface": "ppp0" }
+
+// Anything NetworkManager knows about, by profile name
+{ "label": "Work VPN", "statusCommand": "nmcli -t -f NAME con show --active",
+  "connectedWhen": "work-vpn",
+  "connectCommand": "nmcli con up id work-vpn", "disconnectCommand": "nmcli con down id work-vpn" }
+```
+
+### Picking a server
+
+Set `regionListCommand` (prints one option per line) and `regionSetCommand`
+(with `{}` where the choice goes) and a **Change server…** row appears in the
+panel. It hands the list to `omarchy-menu-select`, so you get Quattro's own
+themed picker instead of something I bolted on.
+
+PIA gets this for free, no config needed — it reads all 190 regions from
+`piactl get regions`.
 
 ### When you actually have to write code
 

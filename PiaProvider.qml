@@ -64,6 +64,19 @@ Item {
     : ""
 
   // ---- actions ---------------------------------------------------------
+  // Region picking goes through omarchy-menu-select, Quattro's own themed
+  // picker, so the panel gets a native keyboard-driven list without this
+  // plugin reimplementing one in QML.
+  readonly property bool canPickRegion: installed
+  function pickRegion() {
+    run(["bash", "-lc",
+      'opts=$(' + piactl + ' get regions 2>/dev/null | tr "\n" " "); ' +
+      '[ -n "$opts" ] || exit 0; ' +
+      'sel=$(omarchy-menu-select "PIA region" $opts 2>/dev/null) || exit 0; ' +
+      '[ -n "$sel" ] && [ "$sel" != CNCLD ] || exit 0; ' +
+      piactl + ' set region "$sel"'])
+  }
+
   function connectVpn() { busy = true; run([piactl, "connect"]) }
   function disconnectVpn() { busy = true; run([piactl, "disconnect"]) }
   function toggle() { connected || connecting ? disconnectVpn() : connectVpn() }
